@@ -1,7 +1,30 @@
 #!/usr/bin/ruby
 
 require "ostruct"
-require "~/dev/gems/lib/cygpath.rb"
+
+module Cygpath
+  def self.win2cyg(*paths)
+    path = File.join(*paths)
+    if path.match(/^\w:[\/\\]/) then
+      drive = path[0]
+      path = path[2 .. -1]
+      return sprintf("/cygdrive/%s/%s", drive, path).gsub(/\/\//, "/")
+    end
+    return path
+  end
+
+  def self.cyg2win(*paths)
+    path = File.join(*paths)
+    path = File.absolute_path(path)
+    if path.start_with?("/cygdrive/") then
+      return path[10 .. -1].gsub(/^(\w)/, '\1:')
+    elsif path[0] == "/" then
+      return ("c:/cygwin" + path)
+    end
+    return path
+  end
+end
+
 
 # these are blacklisted environment variables.
 # it's wiser to just use a blacklisting system, because otherwise
@@ -65,7 +88,11 @@ BADNAMES = %w(
 # from $PATH - usually paths that would collide with cygwin commands
 # in this case, python
 BADPATHS = [
-  /^c:[\\\/](\w+[\\\/])?python(.*)?[\\\/]/i,
+  #/^c:[\\\/](\w+[\\\/])?python(.*)?[\\\/]/i,
+]
+
+ADDPATHS = [
+  '/cygdrive/c/scripting/python3/',
 ]
 
 # variables that denote paths
@@ -106,6 +133,15 @@ def isbad(name)
   return (name.match(/^\w+$/) == nil)
 end
 
+def isbadpath(v)
+  BADPATHS.each do |bp|
+    if v.match?(bp) then
+      return true
+    end
+  end
+  return false
+end
+
 
 def win2cyg(path)
   newpath = Cygpath.win2cyg(path)
@@ -127,13 +163,15 @@ def mkval(name, rawstr)
     if name == "PATH" then
       vals = []
       value.split(oldsep).each{|v|  
-        BADPATHS.each do |bp|
-          if not v.match?(bp) then
-            cygged = win2cyg(v)
-            vals.push(cygged)
-          end
+        if not isbadpath(v) then
+          cygged = win2cyg(v)
+          vals.push(cygged)
         end
       }
+      ADDPATHS.each do |a|
+        vals.push(a)
+      end
+      p vals
       value = vals.join(newsep)
     else
       value = value.split(oldsep).map{|v| win2cyg(v) }.join(newsep)
